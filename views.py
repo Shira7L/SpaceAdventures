@@ -1,8 +1,7 @@
-import arcade
-from constants import *
-import pytmx
-import pygame
-pygame.init()
+from final.constants import *
+from final.class_play1 import *
+import random
+BACKGROUND_IMAGE = "background.jpeg"
 
 
 class Button(arcade.Sprite):
@@ -61,8 +60,9 @@ class GameMenu(arcade.View):  # Меню игры
         if self.game1.is_hovered:
             # Начать игру 1
             self.window.close()
-            view = Game()
-            view.run()
+            window = MyGame()
+            window.setup()
+            arcade.run()
         elif self.game2.is_hovered:
             # Начать игру 2
             print("Запуск игры 2")
@@ -94,41 +94,93 @@ class RulesView(arcade.View):
         self.window.show_view(view)
 
 
-class Game:
-    # Загрузка карты
+class MyGame(arcade.Window):
     def __init__(self):
-        self.screen = pygame.display.set_mode((MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE))
-        pygame.display.set_caption("Игра 1")
-        self.tmx_data = pytmx.load_pygame("C:\\Users\\User\\PycharmProjects\\pythonProject4\\ground.tmx")
+        super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
+        self.tile_map = None
+        self.scene = None
+        self.player_sprite = None
+        self.physics_engine = None
+        self.camera = None
+        self.gui_camera = None
+        self.score = 0
+        self.coins = arcade.SpriteList()
+        arcade.set_background_color(arcade.csscolor.CORNFLOWER_BLUE)
 
-    def draw_map(self):
-        # Слой "background"
-        background_layer = self.tmx_data.get_layer_by_name("background")
-        if isinstance(background_layer, pytmx.TiledTileLayer):
-            for x, y, gid in background_layer:
-                if gid != 0:
-                    tile = self.tmx_data.get_tile_image_by_gid(gid)
-                    if tile:
-                        self.screen.blit(tile, (x * TILE_SIZE, y * TILE_SIZE))
+    def setup(self):
+        self.camera = arcade.Camera(self.width, self.height)
+        self.gui_camera = arcade.Camera(self.width, self.height)
+        map_name = "maps.json"
+        layer_options = {
+            "platforms": {
+                "use_spatial_hash": True,
+            },
+        }
+        self.tile_map = arcade.load_tilemap(map_name, TILE_SCALING, layer_options)
+        self.scene = arcade.Scene.from_tilemap(self.tile_map)
+        self.player_sprite = PlayerSprite()
+        self.player_sprite.center_x = 128
+        self.player_sprite.center_y = 128
+        self.scene.add_sprite("Player", self.player_sprite)
+        self.physics_engine = arcade.PhysicsEnginePlatformer(
+            self.player_sprite, self.scene.get_sprite_list("platforms"), GRAVITY
+        )
+        self.generate_coins()
 
-        # Слой "ground"
-        ground_layer = self.tmx_data.get_layer_by_name("ground")
-        if isinstance(ground_layer, pytmx.TiledObjectGroup):
-            for obj in ground_layer:
-                if hasattr(obj, 'gid') and obj.gid != 0:
-                    tile = self.tmx_data.get_tile_image_by_gid(obj.gid)
-                    if tile:
-                        self.screen.blit(tile, (obj.x, obj.y))
+    def generate_coins(self):
+        while len(self.coins) < MAX_COINS:
+            x = random.randint(500, SCREEN_WIDTH - 20)
+            y = random.randint(50, SCREEN_HEIGHT - 20)
+            coin = Coin(x, y)
+            if not arcade.check_for_collision_with_list(coin, self.scene.get_sprite_list(
+                    "platforms")) and not arcade.check_for_collision(coin, self.player_sprite):
+                self.coins.append(coin)
+                self.scene.add_sprite("Coins", coin)
 
-    def run(self):
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-            self.draw_map()
-            pygame.display.flip()
-        pygame.quit()
+    def on_draw(self):
+        arcade.start_render()
+        self.camera.use()
+        self.scene.draw()
+        self.gui_camera.use()
+        score_text = f"Score: {self.score}"
+        arcade.draw_text(score_text, 10, 10, arcade.csscolor.WHITE, 18)
+
+    def on_key_press(self, key, modifiers):
+        if key == arcade.key.UP or key == arcade.key.W:
+            if self.physics_engine.can_jump():
+                self.player_sprite.change_y = PLAYER_JUMP_SPEED
+        elif key == arcade.key.LEFT or key == arcade.key.A:
+            self.player_sprite.change_x = -PLAYER_MOVEMENT_SPEED
+        elif key == arcade.key.RIGHT or key == arcade.key.D:
+            self.player_sprite.change_x = PLAYER_MOVEMENT_SPEED
+
+    def on_key_release(self, key, modifiers):
+        if key == arcade.key.LEFT or key == arcade.key.A:
+            self.player_sprite.change_x = 0
+        elif key == arcade.key.RIGHT or key == arcade.key.D:
+            self.player_sprite.change_x = 0
+
+    def center_camera_to_player(self):
+        screen_center_x = self.player_sprite.center_x - (self.camera.viewport_width / 2)
+        screen_center_y = self.player_sprite.center_y - (self.camera.viewport_height / 2)
+
+        if screen_center_x < 0:
+            screen_center_x = 0
+        if screen_center_y < 0:
+            screen_center_y = 0
+
+        player_centered = screen_center_x, screen_center_y
+        self.camera.move_to(player_centered)
+
+    def on_update(self, delta_time):
+        self.physics_engine.update()
+        self.player_sprite.update_texture()
+        self.center_camera_to_player()
+        collided_coins = arcade.check_for_collision_with_list(self.player_sprite, self.coins)
+        for coin in collided_coins:
+            coin.remove_from_sprite_lists()
+            self.score += COIN_SCORE
+        self.generate_coins()
 
 
 class GameOver(arcade.View):  # Конечная заставка

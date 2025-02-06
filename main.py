@@ -1,6 +1,4 @@
-import arcade
-
-from constants import *
+from class_play1 import *
 from views import GameMenu
 
 
