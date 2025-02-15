@@ -1,4 +1,4 @@
-from class_play1 import *
+from class_play import *
 from views import GameMenu
 
 
